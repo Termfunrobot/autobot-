@@ -36,12 +36,7 @@
 
 
 
-/*
- .wheel { position:absolute; width:15px; height:50px; background:#111; bottom:5px; }
-    .wheel.left { left:-8px; }
-    .wheel.right { right:-8px; }
 
-*/
     @keyframes hitFlash { 0% { background:red; } 50% { background:#ff4444; } 100% { background:linear-gradient(#1e90ff,#0b4fa3); } }
     .hit { animation:hitFlash 0.3s; }
     textarea { width:600px; height:100px; font-size:16px; font-family: monospace; padding: 10px; }
@@ -144,6 +139,46 @@ function resetGame(){
 
 
 
+
+
+
+function randomGreenCells(){
+    greenCells=[];
+    document.querySelectorAll(".green-spot").forEach(g=>g.remove());
+    while(greenCells.length < 4){
+        let r=Math.floor(Math.random()*4), c=Math.floor(Math.random()*8);
+        if(!(r===3 && c===0) && !greenCells.some(g=>g.row===r && g.col===c)){
+            let spot=document.createElement("div");
+            spot.className="green-spot";
+            let side=Math.floor(Math.random()*4);
+            if(side===0){ spot.style.width="150px"; spot.style.height="75px"; spot.style.left=(c*150)+"px"; spot.style.top=(r*150+75)+"px"; }
+            else if(side===1){ spot.style.width="150px"; spot.style.height="75px"; spot.style.left=(c*150)+"px"; spot.style.top=(r*150)+"px"; }
+            else if(side===2){ spot.style.width="75px"; spot.style.height="150px"; spot.style.left=(c*150+75)+"px"; spot.style.top=(r*150)+"px"; }
+            else { spot.style.width="75px"; spot.style.height="150px"; spot.style.left=(c*150)+"px"; spot.style.top=(r*150)+"px"; }
+            field.appendChild(spot);
+            greenCells.push({row:r, col:c});
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
 function randomGreenCells(){
     greenCells=[];
     document.querySelectorAll(".green-spot").forEach(g=>g.remove());
@@ -196,6 +231,11 @@ function randomGreenCells(){
 
 
 
+*/
+
+
+
+
 function generateWalls() {
     let percent = parseInt(document.getElementById("wallPercent").value) / 100;
     let isPathValid = false;
@@ -243,31 +283,9 @@ function generateWalls() {
 
 
 
-/*
-
-function generateWalls() {
-    let percent = parseInt(document.getElementById("wallPercent").value) / 100;
-    let isPathValid = false;
-    let attempts = 0;
-    while (!isPathValid && attempts < 100) {
-        attempts++;
-        document.querySelectorAll(".wall-edge").forEach(w => w.remove());
-        wallEdges = [];
-        for (let r = 0; r < 4; r++) {
-            for (let c = 0; c < 8; c++) {
-                if (Math.random() < percent) addWall(r, c, "right");
-                if (Math.random() < percent) addWall(r, c, "bottom");
-            }
-        }
-        for (let r = 0; r < 4; r++) { addWall(r, 0, "left"); addWall(r, 7, "right"); }
-        for (let c = 0; c < 8; c++) { addWall(0, c, "top"); addWall(3, c, "bottom"); }
-        wallEdges = wallEdges.filter(w => !(w.row === 3 && w.col === 0 && w.side === "top"));
-        isPathValid = checkAllCellsReachable();
-    }
-}
 
 
-*/
+
 
 
 
