@@ -145,19 +145,58 @@ function resetGame(){
 function randomGreenCells(){
     greenCells=[];
     document.querySelectorAll(".green-spot").forEach(g=>g.remove());
-    while(greenCells.length < 4){
-        let r=Math.floor(Math.random()*4), c=Math.floor(Math.random()*8);
-        if(!(r===3 && c===0) && !greenCells.some(g=>g.row===r && g.col===c)){
-            let spot=document.createElement("div");
-            spot.className="green-spot";
-            let side=Math.floor(Math.random()*4);
-            if(side===0){ spot.style.width="150px"; spot.style.height="75px"; spot.style.left=(c*150)+"px"; spot.style.top=(r*150+75)+"px"; }
-            else if(side===1){ spot.style.width="150px"; spot.style.height="75px"; spot.style.left=(c*150)+"px"; spot.style.top=(r*150)+"px"; }
-            else if(side===2){ spot.style.width="75px"; spot.style.height="150px"; spot.style.left=(c*150+75)+"px"; spot.style.top=(r*150)+"px"; }
-            else { spot.style.width="75px"; spot.style.height="150px"; spot.style.left=(c*150)+"px"; spot.style.top=(r*150)+"px"; }
-            field.appendChild(spot);
-            greenCells.push({row:r, col:c});
+    
+    // 1. คัดกรองเฉพาะช่องที่อยู่ "ขอบสนาม"
+    let edgeCells = [];
+    for(let r=0; r<4; r++){
+        for(let c=0; c<8; c++){
+            if(r === 0 || r === 3 || c === 0 || c === 7){
+                if(!(r === 3 && c === 0)){ // ยกเว้นจุด Start
+                    edgeCells.push({r: r, c: c});
+                }
+            }
         }
+    }
+
+    // 2. สุ่มเลือกจากช่องขอบสนาม 4 จุด
+    while(greenCells.length < 4 && edgeCells.length > 0){
+        let randomIndex = Math.floor(Math.random() * edgeCells.length);
+        let selected = edgeCells.splice(randomIndex, 1)[0]; 
+        let r = selected.r;
+        let c = selected.c;
+
+        let spot = document.createElement("div");
+        spot.className = "green-spot";
+        
+        // 3. ตรรกะใหม่: บังคับให้พื้นที่สีเขียวหันไปด้านที่ "ชิดขอบสนาม" เสมอ
+        let possibleSides = [];
+        if (r === 0) possibleSides.push(1); // ชิดขอบบน
+        if (r === 3) possibleSides.push(0); // ชิดขอบล่าง
+        if (c === 0) possibleSides.push(3); // ชิดขอบซ้าย
+        if (c === 7) possibleSides.push(2); // ชิดขอบขวา
+        
+        // สุ่มเลือก 1 ด้านจากด้านที่ติดขอบสนาม
+        let side = possibleSides[Math.floor(Math.random() * possibleSides.length)];
+
+        if(side === 0){ // ชิดล่าง
+            spot.style.width = "150px"; spot.style.height = "75px"; 
+            spot.style.left = (c * 150) + "px"; spot.style.top = (r * 150 + 75) + "px"; 
+        }
+        else if(side === 1){ // ชิดบน
+            spot.style.width = "150px"; spot.style.height = "75px"; 
+            spot.style.left = (c * 150) + "px"; spot.style.top = (r * 150) + "px"; 
+        }
+        else if(side === 2){ // ชิดขวา
+            spot.style.width = "75px"; spot.style.height = "150px"; 
+            spot.style.left = (c * 150 + 75) + "px"; spot.style.top = (r * 150) + "px"; 
+        }
+        else { // ชิดซ้าย
+            spot.style.width = "75px"; spot.style.height = "150px"; 
+            spot.style.left = (c * 150) + "px"; spot.style.top = (r * 150) + "px"; 
+        }
+        
+        field.appendChild(spot);
+        greenCells.push({row: r, col: c});
     }
 }
 
@@ -350,11 +389,13 @@ function moveBackward(){ direction=(direction+180)%360; moveForward(); direction
 function turnLeft(){ direction=(direction+270)%360; updateRobot(); }
 function turnRight(){ direction=(direction+90)%360; updateRobot(); }
 
+
+
 function dropBox(){
     if(ammo<=0){ return; }
     let tr=row, tc=col;
     if(direction===0) tr--; if(direction===90) tc++; if(direction===180) tr++; if(direction===270) tc--;
-    if(tr<0||tr>=4||tc<0||tc>=8) return;
+ 
     
     let exists = Array.from(document.querySelectorAll(".box")).some(b => parseInt(b.dataset.row)===tr && parseInt(b.dataset.col)===tc);
     if(exists) return;
