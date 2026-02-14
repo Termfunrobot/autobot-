@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+    body { text-align:center; font-family:sans-serif; background:#cccccc; }
+    #field { position:relative; width:1200px; height:600px; background:#eee; border:3px solid #000; margin: 0 auto; overflow: hidden;}
+    .cell { position:absolute; width:150px; height:150px; box-sizing:border-box; border:1px solid #ccc; }
+    .start-spot { position:absolute; width:140px; height:140px; background:#ff4d4d; z-index:0; }
+    .green-spot { position:absolute; background:#7CFC00; border-radius:8px; z-index:1; }
+    .wall-edge { position:absolute; background:#333; z-index:2; }
+    .box { position:absolute; width:24px; height:24px; background:orange; border:2px solid #aa5500; border-radius:4px; z-index:4; transition: 0.1s; }
+    #robot { width:60px; height:65px; background:linear-gradient(#1e90ff,#0b4fa3); border:2px solid #000; border-radius:8px; position:absolute; transform-origin:center; transition:0.2s; z-index:5; }
+   
+.head { position:absolute; top:0; left:50%; transform:translateX(-50%); width:50%; height:30px; background:#000; border-radius:5px; }
+
+
+
+.wheel { 
+    position: absolute; 
+    width: 16px;        /* เพิ่มความกว้างของสายพาน */
+    height: 50px;       /* เพิ่มความยาวให้ดูเหมือนสายพานรถถัง */
+    background: repeating-linear-gradient(
+        #111,           /* สีดำ */
+        #111 8px, 
+        #333 5px,       /* ลายบากสีเทาเข้ม */
+        #333 10px
+    ); 
+    bottom: 5px; 
+    border-radius: 3px;
+    border: 1px solid #000;
+}
+
+.wheel.left { left: -10px; }  /* ขยับออกมาข้างๆ เล็กน้อย */
+.wheel.right { right: -10px; }
+
+
+
+/*
+ .wheel { position:absolute; width:15px; height:50px; background:#111; bottom:5px; }
+    .wheel.left { left:-8px; }
+    .wheel.right { right:-8px; }
+
+*/
+    @keyframes hitFlash { 0% { background:red; } 50% { background:#ff4444; } 100% { background:linear-gradient(#1e90ff,#0b4fa3); } }
+    .hit { animation:hitFlash 0.3s; }
+    textarea { width:600px; height:100px; font-size:16px; font-family: monospace; padding: 10px; }
+    button { margin:3px; padding:8px 15px; cursor: pointer; }
+    .side-panel { width:250px; text-align:left; background:#f5f5f5; padding:15px; border-radius:8px; border:2px solid #999; }
+    .layout { display:flex; justify-content:center; gap:30px; margin-top:20px; }
+    code { background: #eee; padding: 2px 4px; border-radius: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h2>SMR Robot simulator Arduino Edition โปรแกรมจำลองหุ่นยนต์ ระดับกลาง สพฐ .2026 </h2>
+<input type="number" id="wallPercent" value="30" min="0" max="80"> %
+<button onclick="generateWalls()">สุ่มกำแพง</button>
+<button onclick="randomGreenCells()">สุ่มพื้นสีเขียว (4 จุด)</button>
+<button onclick="resetGame()">🔄 รีเซ็ต</button>
+
+<br><br>
+
+<div>
+    ลูกบาศก์คงเหลือ: <span id="ammoCount">4</span> | 
+    คะแนน: <span id="scoreText">0</span> |
+    <small>SMR V3.0 (2026)</small>
+</div>
+
+<br>
+
+<textarea id="commandInput">GO1();
+GO1();
+RR90();
+JY1();</textarea>
+<br>
+<button onclick="runCommands()" style="background: #28a745; color: white; border: none; font-size: 18px;">▶ RUN CODE</button>
+<button id="loopBtn" onclick="toggleLoop()" style="background: #17a2b8; color: white; border: none; font-size: 18px;">🔄 START LOOP</button>
+
+<div class="layout">
+    <div id="field"></div>
+    <div class="side-panel">
+        <h3>📘 Arduino Commands</h3>
+        <code>GO1();</code>  → เดินหน้า<br><br>
+        <code>LL90();</code> → หมุนซ้าย 90°<br><br>
+        <code>RR90();</code> → หมุนขวา 90°<br><br>
+        <code>BK();</code>   → ถอยหลัง<br><br>
+        <code>JY1();</code>  → จ่ายลูกบาศก์ด้านหน้า
+    </div>
+</div>
+
+<script>
+const field = document.getElementById("field");
+let row=3, col=0, direction=0;
+let wallEdges=[], greenCells=[], ammo=4, score=0, running=false, loopActive=false;
+
+//สร้าง Grid
+for(let r=0;r<4;r++){
+    for(let c=0;c<8;c++){
+        let cell=document.createElement("div");
+        cell.className="cell";
+        cell.style.left=(c*150)+"px"; cell.style.top=(r*150)+"px";
+        field.appendChild(cell);
+    }
+}
+
+// สร้างจุดเริ่มใหม่
+let startSpot = document.createElement("div");
+startSpot.className = "start-spot";
+
+// คำนวณให้อยู่กลางช่อง: (ขนาดช่อง 150 - ขนาดจุด 30) / 2 = 60px
+let offset = (150 - 140) / 2; 
+
+startSpot.style.left = (0 * 150 + offset) + "px"; 
+startSpot.style.top = (3 * 150 + offset) + "px";
+
+field.appendChild(startSpot);
+
+
+
+//สร้างหุ่นยนต์
+const robot=document.createElement("div");
+robot.id="robot";
+robot.innerHTML='<div class="head"></div><div class="wheel left"></div><div class="wheel right"></div>';
+field.appendChild(robot);
+
+function updateRobot(){
+    robot.style.left=(col*150+45)+"px";
+    robot.style.top=(row*150+45)+"px";
+    robot.style.transform="rotate("+direction+"deg)";
+}
+
+function resetGame(){
+    row=3; col=0; direction=0; updateRobot();
+    ammo=4; score=0; loopActive=false;
+    document.getElementById("ammoCount").innerText=ammo;
+    document.getElementById("scoreText").innerText=score;
+    document.getElementById("loopBtn").innerText = "🔄 START LOOP";
+    document.getElementById("loopBtn").style.background = "#17a2b8";
+    document.querySelectorAll(".box").forEach(b=>b.remove());
+}
+
+
+
+
+
+function randomGreenCells(){
+    greenCells=[];
+    document.querySelectorAll(".green-spot").forEach(g=>g.remove());
+    
+    // 1. คัดกรองเฉพาะช่องที่อยู่ "ขอบสนาม"
+    let edgeCells = [];
+    for(let r=0; r<4; r++){
+        for(let c=0; c<8; c++){
+            if(r === 0 || r === 3 || c === 0 || c === 7){
+                if(!(r === 3 && c === 0)){ // ยกเว้นจุด Start
+                    edgeCells.push({r: r, c: c});
+                }
+            }
+        }
+    }
+
+    // 2. สุ่มเลือกจากช่องขอบสนาม 4 จุด และสุ่มทิศทางภายในช่องนั้น
+    while(greenCells.length < 4 && edgeCells.length > 0){
+        let randomIndex = Math.floor(Math.random() * edgeCells.length);
+        let selected = edgeCells.splice(randomIndex, 1)[0]; 
+        let r = selected.r;
+        let c = selected.c;
+
+        let spot = document.createElement("div");
+        spot.className = "green-spot";
+        
+        // สุ่มทิศทาง (0=ล่าง, 1=บน, 2=ขวา, 3=ซ้าย) เหมือนเดิม
+        let side = Math.floor(Math.random() * 4);
+        if(side === 0){ 
+            spot.style.width = "150px"; spot.style.height = "75px"; 
+            spot.style.left = (c * 150) + "px"; spot.style.top = (r * 150 + 75) + "px"; 
+        }
+        else if(side === 1){ 
+            spot.style.width = "150px"; spot.style.height = "75px"; 
+            spot.style.left = (c * 150) + "px"; spot.style.top = (r * 150) + "px"; 
+        }
+        else if(side === 2){ 
+            spot.style.width = "75px"; spot.style.height = "150px"; 
+            spot.style.left = (c * 150 + 75) + "px"; spot.style.top = (r * 150) + "px"; 
+        }
+        else { 
+            spot.style.width = "75px"; spot.style.height = "150px"; 
+            spot.style.left = (c * 150) + "px"; spot.style.top = (r * 150) + "px"; 
+        }
+        
+        field.appendChild(spot);
+        greenCells.push({row: r, col: c});
+    }
+}
+
+
+
+function generateWalls() {
+    let percent = parseInt(document.getElementById("wallPercent").value) / 100;
+    let isPathValid = false;
+    let attempts = 0;
+
+    while (!isPathValid && attempts < 100) {
+        attempts++;
+        document.querySelectorAll(".wall-edge").forEach(w => w.remove());
+        wallEdges = [];
+
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 8; c++) {
+                // สุ่มว่าจะสร้างกำแพงในช่องนี้ไหม
+                if (Math.random() < percent) {
+                    // เน้นการสร้าง "ตัว L" โดยการเลือก 2 ด้านที่ติดกันมาเป็นคู่
+                    let lTypes = [
+                        ["right", "bottom"], // L ปกติ
+                        ["right", "top"],    // L กลับหัว
+                        ["left", "bottom"],  // L สะท้อน
+                        ["left", "top"]      // L สะท้อนกลับหัว
+                    ];
+                    
+                    // สุ่มเลือกรูปแบบ L มา 1 แบบ
+                    let chosenL = lTypes[Math.floor(Math.random() * lTypes.length)];
+                    
+                    // วางกำแพงทั้ง 2 ด้านเพื่อให้เกิดมุม L
+                    addWall(r, c, chosenL[0]);
+                    addWall(r, c, chosenL[1]);
+                }
+            }
+        }
+
+        // 2. เพิ่มกำแพงขอบสนาม (เหมือนเดิม)
+        for (let r = 0; r < 4; r++) { addWall(r, 0, "left"); addWall(r, 7, "right"); }
+        for (let c = 0; c < 8; c++) { addWall(0, c, "top"); addWall(3, c, "bottom"); }
+        
+        // ลบกำแพงที่อาจขวางจุดเริ่ม
+        wallEdges = wallEdges.filter(w => !(w.row === 3 && w.col === 0 && w.side === "top"));
+
+        // 3. ตรวจสอบว่า "เดินถึงกันหมดไหม" (Flood Fill)
+        isPathValid = checkAllCellsReachable();
+    }
+}
+
+
+
+
+/*
+
+function generateWalls() {
+    let percent = parseInt(document.getElementById("wallPercent").value) / 100;
+    let isPathValid = false;
+    let attempts = 0;
+    while (!isPathValid && attempts < 100) {
+        attempts++;
+        document.querySelectorAll(".wall-edge").forEach(w => w.remove());
+        wallEdges = [];
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (Math.random() < percent) addWall(r, c, "right");
+                if (Math.random() < percent) addWall(r, c, "bottom");
+            }
+        }
+        for (let r = 0; r < 4; r++) { addWall(r, 0, "left"); addWall(r, 7, "right"); }
+        for (let c = 0; c < 8; c++) { addWall(0, c, "top"); addWall(3, c, "bottom"); }
+        wallEdges = wallEdges.filter(w => !(w.row === 3 && w.col === 0 && w.side === "top"));
+        isPathValid = checkAllCellsReachable();
+    }
+}
+
+
+*/
+
+
+
+
+function checkAllCellsReachable() {
+    let visited = new Set();
+    let queue = [{ r: 3, c: 0 }];
+    visited.add("3,0");
+    while (queue.length > 0) {
+        let { r, c } = queue.shift();
+        let directions = [
+            { dr: -1, dc: 0, side: "top", opposite: "bottom" },
+            { dr: 0, dc: 1, side: "right", opposite: "left" },
+            { dr: 1, dc: 0, side: "bottom", opposite: "top" },
+            { dr: 0, dc: -1, side: "left", opposite: "right" }
+        ];
+        for (let d of directions) {
+            let nr = r + d.dr, nc = c + d.dc;
+            let key = `${nr},${nc}`;
+            if (nr >= 0 && nr < 4 && nc >= 0 && nc < 8 && !visited.has(key)) {
+                if (!hasWall(r, c, d.side) && !hasWall(nr, nc, d.opposite)) {
+                    visited.add(key);
+                    queue.push({ r: nr, c: nc });
+                }
+            }
+        }
+    }
+    return visited.size === 32;
+}
+
+function addWall(r,c,side){
+    let wall=document.createElement("div"); wall.className="wall-edge";
+    if(side==="right"){ wall.style.width="6px"; wall.style.height="150px"; wall.style.left=(c*150+144)+"px"; wall.style.top=(r*150)+"px"; }
+    if(side==="bottom"){ wall.style.width="150px"; wall.style.height="6px"; wall.style.left=(c*150)+"px"; wall.style.top=(r*150+144)+"px"; }
+    if(side==="left"){ wall.style.width="6px"; wall.style.height="150px"; wall.style.left=(c*150)+"px"; wall.style.top=(r*150)+"px"; }
+    if(side==="top"){ wall.style.width="150px"; wall.style.height="6px"; wall.style.left=(c*150)+"px"; wall.style.top=(r*150)+"px"; }
+    field.appendChild(wall); wallEdges.push({row:r,col:c,side:side});
+}
+
+function hasWall(r,c,side){ return wallEdges.some(w=>w.row===r && w.col===c && w.side===side); }
+
+function hitEffect(){
+    try {
+        let audio=new AudioContext(); let osc=audio.createOscillator();
+        osc.type="square"; osc.frequency.setValueAtTime(150,audio.currentTime);
+        osc.connect(audio.destination); osc.start(); osc.stop(audio.currentTime+0.2);
+    } catch(e){}
+    robot.classList.add("hit"); setTimeout(()=>robot.classList.remove("hit"),300);
+}
+
+function moveForward(){
+    let nr=row, nc=col;
+    if(direction===0){ if(hasWall(row,col,"top")) return hitEffect(); nr--; }
+    if(direction===90){ if(hasWall(row,col,"right")) return hitEffect(); nc++; }
+    if(direction===180){ if(hasWall(row,col,"bottom")) return hitEffect(); nr++; }
+    if(direction===270){ if(hasWall(row,col,"left")) return hitEffect(); nc--; }
+    if(nr<0||nr>=4||nc<0||nc>=8){ hitEffect(); return; }
+    row=nr; col=nc; updateRobot();
+}
+
+function moveBackward(){ direction=(direction+180)%360; moveForward(); direction=(direction+180)%360; updateRobot(); }
+function turnLeft(){ direction=(direction+270)%360; updateRobot(); }
+function turnRight(){ direction=(direction+90)%360; updateRobot(); }
+
+function dropBox(){
+    if(ammo<=0){ return; }
+    let tr=row, tc=col;
+    if(direction===0) tr--; if(direction===90) tc++; if(direction===180) tr++; if(direction===270) tc--;
+    if(tr<0||tr>=4||tc<0||tc>=8) return;
+    
+    let exists = Array.from(document.querySelectorAll(".box")).some(b => parseInt(b.dataset.row)===tr && parseInt(b.dataset.col)===tc);
+    if(exists) return;
+
+    let rx = col*150+45, ry = row*150+45, rs=60, bs=24, bx, by;
+    if(direction===0){ bx=rx+(rs/2)-(bs/2); by=ry-bs; }
+    else if(direction===90){ bx=rx+rs; by=ry+(rs/2)-(bs/2); }
+    else if(direction===180){ bx=rx+(rs/2)-(bs/2); by=ry+rs; }
+    else { bx=rx-bs; by=ry+(rs/2)-(bs/2); }
+
+    let box=document.createElement("div");
+    box.className="box"; box.style.left=bx+"px"; box.style.top=by+"px";
+    box.dataset.row=tr; box.dataset.col=tc;
+    field.appendChild(box);
+    ammo--; document.getElementById("ammoCount").innerText=ammo;
+}
+
+// --- ฟังก์ชันเช็กคะแนนแยกตามต้องการ ---
+function checkGreenScore() {
+    score = 0;
+    let allBoxes = document.querySelectorAll(".box");
+    let allGreens = document.querySelectorAll(".green-spot");
+
+    allBoxes.forEach(box => {
+        let bRect = box.getBoundingClientRect(); // ดึงตำแหน่ง Pixel ของกล่อง
+        let isOverlapping = false;
+
+        allGreens.forEach(green => {
+            let gRect = green.getBoundingClientRect(); // ดึงตำแหน่ง Pixel ของพื้นเขียว
+
+            // ตรวจสอบว่าสี่เหลี่ยมสองรูปทับกันหรือไม่ (AABB Collision)
+            let overlap = !(bRect.right < gRect.left || 
+                            bRect.left > gRect.right || 
+                            bRect.bottom < gRect.top || 
+                            bRect.top > gRect.bottom);
+
+            if (overlap) {
+                isOverlapping = true;
+            }
+        });
+
+        if (isOverlapping) {
+            score += 20;
+            box.style.background = "#228B22";
+        } else {
+            box.style.background = "orange";
+        }
+    });
+
+    document.getElementById("scoreText").innerText = score;
+}
+
+async function runCommands(){
+    if(running) return;
+    running=true;
+    let input = document.getElementById("commandInput").value.trim();
+    let rawTokens = input.split(/[\s\n]+/); 
+
+    for(let token of rawTokens){
+        if(token === "" || !loopActive && !running) continue;
+        let cmd = token.replace(/\(\);/i, "").toUpperCase();
+        if(cmd==="GO1") moveForward(); else if(cmd==="BK") moveBackward();
+        else if(cmd==="LL90") turnLeft(); else if(cmd==="RR90") turnRight();
+        else if(cmd==="JY1") dropBox();
+        checkGreenScore(); // เช็กคะแนนทุกครั้งที่ขยับหรือวางบล็อก
+        await sleep(500);
+    }
+    running=false;
+}
+
+
+// --- ฟังก์ชันควมคุม Loop แบบวนซ้ำไม่หยุดจนกว่าจะสั่ง Stop ---
+async function toggleLoop() {
+    const btn = document.getElementById("loopBtn");
+    
+    if (!loopActive) {
+        loopActive = true;
+        btn.innerText = "🛑 STOP LOOP";
+        btn.style.background = "#dc3545";
+        
+        // ใช้ while loop ครอบไว้เพื่อให้ทำงานไม่สิ้นสุด
+        while (loopActive) {
+            // 1. สั่งรีเซ็ตหุ่นและกระดานก่อนเริ่มรอบใหม่
+            resetGame();
+            // ต้องตั้งค่า loopActive กลับเป็น true เพราะ resetGame() อาจไปสั่งปิดมัน
+            loopActive = true; 
+            btn.innerText = "🛑 STOP LOOP";
+            btn.style.background = "#dc3545";
+
+            await sleep(500); // เวลารอก่อนเริ่มเดิน
+
+            // 2. รันคำสั่ง (ใช้ฟังก์ชันที่ทำงานจนจบ)
+            if (loopActive) {
+                await runCommands(); 
+            }
+
+            // 3. เวลารอหลังจบรอบ ก่อนที่จะวนไป Reset ใหม่
+            await sleep(1000); 
+
+            // ตรวจเช็กอีกครั้งเผื่อผู้ใช้กด Stop ระหว่างรอ
+            if (!loopActive) break;
+        }
+    } else {
+        // เมื่อกด Stop
+        loopActive = false;
+        btn.innerText = "🔄 START LOOP";
+        btn.style.background = "#17a2b8";
+    }
+}
+
+// ปรับปรุงฟังก์ชัน resetGame เล็กน้อยไม่ให้ไปปิดโหมด Loop
+function resetGame(){
+    row=3; col=0; direction=0; updateRobot();
+    ammo=4; score=0;
+    // loopActive = false; <-- เอาบรรทัดนี้ออกเพื่อให้ Loop ทำงานต่อได้
+    document.getElementById("ammoCount").innerText=ammo;
+    document.getElementById("scoreText").innerText=score;
+    document.querySelectorAll(".box").forEach(b=>b.remove());
+}
+
+
+
+
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+updateRobot(); randomGreenCells(); generateWalls();
+</script>
+</body>
+</html>
